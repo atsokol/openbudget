@@ -5,6 +5,7 @@ library(lubridate)
 library(purrr)
 library(plotly)
 library(readxl)
+library(writexl)
 
 # Function to construct api path
 api_construct <- function(budgetCode, 
@@ -75,6 +76,12 @@ df_m <- codes |>
   mutate(api_path = list(api_construct(budgetCode, budgetItem, classificationType, period, year))) |> 
   mutate(data = list(map_dfr(api_path, call_api)))
 
+# Write data to Excel file
+data_l <- df_m$data
+names(data_l) <- if_else(!is.na(df_m$classificationType),
+                         paste(df_m$budgetItem, df_m$classificationType, sep=", "),
+                         df_m$budgetItem)
+write_xlsx(data_l, "./data/data_output.xlsx")
 
 # Compare across periods
 (g1 <- df_1 |> 
