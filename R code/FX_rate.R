@@ -34,13 +34,12 @@ fx_xts <- xts(fx$rate, order.by = as.Date(fx$exchangedate, format = "%d.%m.%Y"))
 
 # Get series for previous year fractional period
 last_index <- index(last(fx_xts)) - years(1)
-fx_xts_last <- fx_xts[paste0(year(last_year), "/", last_year)]
+fx_xts_last <- fx_xts[paste0(year(last_index), "/", last_index)]
 
 # Calculate annual average and end-of-year values, add previous year fractional period
 fx_agg <- agg_FX(fx_xts) |> fortify()
 fx_last_agg <- agg_FX(fx_xts_last) |> fortify()
-rbind(fx_agg,fx_last_agg)
-
+fx_agg <- rbind(fx_agg,fx_last_agg)
 
 
 
