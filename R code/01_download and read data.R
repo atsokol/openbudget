@@ -6,8 +6,8 @@ library(readxl)
 library(writexl)
 
 # Inputs
-BUDGETCODE <- "26000000000" # Lviv code: "1356300000"
-YEAR <- c(2022,2023)
+BUDGETCODE <- c("13563000000", "1356300000") # different codes for different years
+YEAR <- c(2022, 2023)
 PERIOD <- "MONTH"
 
 
@@ -65,24 +65,23 @@ call_api <- function(api_path, col_types) {
 }
 
 
-# Read in data across multiple periods for a single category
-df_1 <- api_construct(budgetCode = BUDGETCODE, budgetItem = "INCOMES", year = YEAR) |> 
-  map_dfr(call_api, col_types = "cfcicddd")
-
-# Read in data across multiple periods and categories into a nested data frame
+# Read in API codes
 codes <- read_excel("./data/Open Budget variable types.xlsx")
 
+# Read in data across multiple periods and categories into a nested data frame
 df_m <- codes |> 
   group_by(budgetItem, classificationType) |> 
   summarise(col_type = paste(colType, collapse = "")) |> 
   mutate(budgetItem = str_trim(budgetItem),
          classificationType = str_trim(classificationType)) |> # trim white space in category names
-  mutate(budgetCode = BUDGETCODE, 
-         period = PERIOD) |> 
-  mutate(year = list(YEAR)) |> 
+  expand_grid(budgetCode = BUDGETCODE, period = PERIOD, year = YEAR) |> 
   rowwise() |> 
-  mutate(api_path = list(api_construct(budgetCode, budgetItem, classificationType, period, year))) |> 
-  mutate(data = list(map_dfr(api_path, call_api, col_type)))
+  mutate(api_path = api_construct(budgetCode, budgetItem, classificationType, period, year)) |> 
+  mutate(data = list(call_api(api_path, col_type))) |> 
+  select(budgetItem, classificationType, data) |> 
+  group_by(budgetItem, classificationType) |> 
+  summarise(data = list(map_dfr(data, rbind)))
+
 
 # Write data to Excel file
 data_l <- df_m$data
