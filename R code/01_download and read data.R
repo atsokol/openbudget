@@ -1,7 +1,6 @@
 library(httr)
 library(jsonlite)
 library(tidyverse)
-library(plotly)
 library(readxl)
 library(writexl)
 
@@ -68,90 +67,89 @@ call_api <- function(api_path, col_types) {
 # Read in API codes
 codes <- read_excel("./data/Open Budget variable types.xlsx")
 
-# Read in data across multiple periods and categories into a nested data frame
-df_m <- codes |> 
+# Construct api calls
+df_api <- codes |> 
   group_by(budgetItem, classificationType) |> 
   summarise(col_type = paste(colType, collapse = "")) |> 
   mutate(budgetItem = str_trim(budgetItem),
          classificationType = str_trim(classificationType)) |> # trim white space in category names
   expand_grid(budgetCode = BUDGETCODE, period = PERIOD, year = YEAR) |> 
   rowwise() |> 
-  mutate(api_path = api_construct(budgetCode, budgetItem, classificationType, period, year)) |> 
+  mutate(api_path = api_construct(budgetCode, budgetItem, classificationType, period, year)) 
+
+# Read in data across multiple periods and categories into a nested data frame
+df_n <- df_api |> 
   mutate(data = list(call_api(api_path, col_type))) |> 
   select(budgetItem, classificationType, data) |> 
   group_by(budgetItem, classificationType) |> 
   summarise(data = list(map_dfr(data, rbind)))
 
 
-# Write data to Excel file
-data_l <- df_m$data
-names(data_l) <- if_else(!is.na(df_m$classificationType),
-                         paste(df_m$budgetItem, df_m$classificationType, sep=", "),
-                         df_m$budgetItem)
+# Extract nested data column 
+data_l <- df_n$data
+names(data_l) <- if_else(!is.na(df_n$classificationType),
+                         paste(df_n$budgetItem, df_n$classificationType, sep=", "),
+                         df_n$budgetItem)
 
+# Most recent date for which data is available
 last_date <- max(data_l$INCOMES$REP_PERIOD)
 
-write_xlsx(data_l, "./data/data_output.xlsx")
+# Function to summarise and reshape data for export
+reshape_table <- function(df, last_date) {
+  df_agg <- df |> 
+    filter(month(REP_PERIOD) %in% c(month(max(REP_PERIOD)),12),
+           FUND_TYP == "T")|>
+    group_by(TYPE,REP_PERIOD)%>% 
+    summarise(FAKT_AMT = sum(FAKT_AMT),
+              ZAT_AMT = sum(ZAT_AMT))
+  
+  df_t <- df_agg |> 
+    select(-ZAT_AMT) |> 
+    pivot_wider(names_from = "REP_PERIOD", values_from = "FAKT_AMT") |> 
+    left_join(
+      pivot_wider(df_agg |> 
+                    select(-FAKT_AMT) |> 
+                    filter(REP_PERIOD == last_date) |> 
+                    mutate(REP_PERIOD = paste0(year(last_date), "_B")), 
+                  names_from = "REP_PERIOD", 
+                  values_from = "ZAT_AMT"),
+      by = c("TYPE" = "TYPE")) |> 
+    ungroup() |> 
+    as_tibble()
+  
+  return(df_t)
+}
 
 # Aggregate data by category
 inc <- data_l$INCOMES |>
   mutate(TYPE = cut(COD_INCO, 
                     breaks = c(0,19999999,29999999,39999999,60000000),
-                    labels = c("Tax","Non-tax","Cap_rev","Transfers")
-  )
-  ) |> 
-  filter(month(REP_PERIOD) %in% c(month(max(REP_PERIOD)),12),
-         FUND_TYP == "T") |>
-  group_by(TYPE,REP_PERIOD) |> 
-  summarise(FAKT_AMT = sum(FAKT_AMT),
-            ZAT_AMT = sum(ZAT_AMT))
+                    labels = c("Tax","Non-tax","Cap_rev","Transfers"))
+         ) |> 
+  reshape_table(last_date) |> 
+  mutate(CAT = "Income", .before=1)
+
 
 exp <- data_l$`EXPENSES, ECONOMIC` |> 
   mutate(TYPE = cut(COD_CONS_EK, 
                     breaks = c(0,2280,2281,2399,2421,2999,8999,9001),
                     labels = c("Opex","Capex","Opex","Interest","Opex","Capex","Opex"))
          ) |> 
-  filter(month(REP_PERIOD) %in% c(month(max(REP_PERIOD)),12),
-         FUND_TYP == "T") |> 
-  group_by(TYPE,REP_PERIOD) |> 
-  summarise(FAKT_AMT = sum(FAKT_AMT),
-            ZAT_AMT = sum(ZAT_AMT))
-
+  reshape_table(last_date) |> 
+  mutate(CAT = "Expense", .before=1)
 
 fin <- data_l$FINANCING_DEBTS |> 
-  mutate(TYPE=if_else(COD_FINA==401000, {"New Borrowing"},
-                      if_else(COD_FINA==402000,"Debt Repayments",
-                              if_else(COD_FINA==602300,"Interbudget loans","NA")))
+  mutate(TYPE = case_when(COD_FINA == 401000 ~ "New Borrowing",
+                          COD_FINA == 402000 ~ "Debt Repayments",
+                          COD_FINA == 602300 ~ "Interbudget loans",
+                          TRUE ~ "NA")
          ) |> 
-  filter(month(REP_PERIOD) %in% c(month(max(REP_PERIOD)),12),
-         FUND_TYP == "T")|>
-  group_by(TYPE,REP_PERIOD)%>% 
-  summarise(FAKT_AMT = sum(FAKT_AMT),
-            ZAT_AMT = sum(ZAT_AMT))
+  reshape_table(last_date) |> 
+  mutate(CAT = "Financing", .before=1)
 
-# Function to reshape aggregate data table for export
-reshape_table <- function(table, last_date) {
-  table |> 
-    select(-ZAT_AMT) |> 
-    pivot_wider(names_from = "REP_PERIOD", values_from = "FAKT_AMT") |> 
-    left_join(
-      pivot_wider(table |> 
-                    select(-FAKT_AMT) |> 
-                    filter(REP_PERIOD == last_date) |> 
-                    mutate(REP_PERIOD = paste0(year(last_date), "_B")), 
-                  names_from = "REP_PERIOD", 
-                  values_from = "ZAT_AMT"),
-      by = c("TYPE" = "TYPE")
-    ) |> 
-    relocate(as.character(floor_date(last_date, unit="year") - days(1)), .after="TYPE") |> 
-    ungroup()
-}
-
-reshape_table(inc, last_date)
-reshape_table(exp, last_date)
-reshape_table(fin, last_date)
-
-
+# Write data to Excel file
+data_l <- append(list(SUMMARY = rbind(inc, exp, fin)), data_l)
+write_xlsx(data_l, "./data/output.xlsx")
  
 
 
