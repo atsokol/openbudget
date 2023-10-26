@@ -5,7 +5,7 @@ library(readxl)
 library(writexl)
 
 # Inputs
-BUDGETCODE <- c("13563000000", "1356300000") # different codes for different years
+BUDGETCODE <- c("1356300000", "13563000000") # different codes for different years
 YEAR <- c(2022, 2023)
 PERIOD <- "MONTH"
 
@@ -50,14 +50,14 @@ call_api <- function(api_path, col_types) {
   
   if (missing(col_types)) {
       data_read <- data_call |> 
-      read_delim(delim = ";") |> 
-      mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
-               ceiling_date(unit="month") - days(1))
+        read_delim(delim = ";") |> 
+        mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
+               ceiling_date(unit="month") - days(1)) 
   } else {
       data_read <- data_call |> 
-      read_delim(delim = ";", col_types = col_types) |> 
-      mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
-             ceiling_date(unit="month") - days(1))
+        read_delim(delim = ";", col_types = col_types) |> 
+        mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
+             ceiling_date(unit="month") - days(1)) 
   }
   
   return(data_read)
@@ -82,7 +82,7 @@ df_n <- df_api |>
   mutate(data = list(call_api(api_path, col_type))) |> 
   select(budgetItem, classificationType, data) |> 
   group_by(budgetItem, classificationType) |> 
-  summarise(data = list(map_dfr(data, rbind)))
+  summarise(data = list(map_dfr(data, rbind) |> arrange(REP_PERIOD)))
 
 
 # Extract nested data column as a list
@@ -91,40 +91,44 @@ names(data_l) <- if_else(!is.na(df_n$classificationType),
                          paste(df_n$budgetItem, df_n$classificationType, sep=", "),
                          df_n$budgetItem)
 
-# Most recent date for which data is available
-last_date <- max(data_l$INCOMES$REP_PERIOD)
-
-# Function to summarise and reshape data for export
-reshape_table <- function(df, last_date) {
+# Function to aggregate and reshape data in the SUMMARY table
+reshape_table <- function(df, date) {
   df_agg <- df |> 
-    filter(month(REP_PERIOD) %in% c(month(max(REP_PERIOD)),12),
+    filter(month(REP_PERIOD) %in% c(month(date),12),
            FUND_TYP == "T")|>
-    group_by(TYPE,REP_PERIOD)%>% 
+    group_by(TYPE, REP_PERIOD)%>% 
     summarise(FAKT_AMT = sum(FAKT_AMT),
               ZAT_AMT = sum(ZAT_AMT))
   
   df_t <- df_agg |> 
     select(-ZAT_AMT) |> 
+    mutate(REP_PERIOD = ifelse(month(REP_PERIOD) == 12, 
+                               year(REP_PERIOD), 
+                               paste0(month(REP_PERIOD), "m ", year(REP_PERIOD)))) |> # period labels for actual amounts
     pivot_wider(names_from = "REP_PERIOD", values_from = "FAKT_AMT") |> 
     left_join(
       pivot_wider(df_agg |> 
                     select(-FAKT_AMT) |> 
-                    filter(REP_PERIOD == last_date) |> 
-                    mutate(REP_PERIOD = paste0(year(last_date), "_B")), 
+                    filter(REP_PERIOD == date) |> 
+                    mutate(REP_PERIOD = paste0(year(date), "_B")), # period label for budget amounts
                   names_from = "REP_PERIOD", 
                   values_from = "ZAT_AMT"),
       by = c("TYPE" = "TYPE")) |> 
     ungroup() |> 
-    mutate(across(where(is.double), ~ round(.x / 10^6, 0)))
+    mutate(across(where(is.double), ~ round(.x / 10^6, 0))) # convert units to millions UAH
   
   return(df_t)
 }
+
+# Reporting date
+last_date <- max(data_l$INCOMES$REP_PERIOD) # most recent date by default
+# last_date <- ymd('2023-06-30') # manual entry as an alternative
 
 # Aggregate data by category
 inc <- data_l$INCOMES |>
   mutate(TYPE = cut(COD_INCO, 
                     breaks = c(0,19999999,29999999,39999999,60000000),
-                    labels = c("Tax","Non-tax","Cap_rev","Transfers"))
+                    labels = c("Tax","Non-tax","Capital revenues","Transfers"))
          ) |> 
   reshape_table(last_date) |> 
   mutate(CAT = "Income", .before=1)
