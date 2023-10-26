@@ -114,10 +114,8 @@ reshape_table <- function(df, last_date) {
                   names_from = "REP_PERIOD", 
                   values_from = "ZAT_AMT"),
       by = c("TYPE" = "TYPE")) |> 
-    ungroup()
-  
-  df_t <- df_t |> 
-    mutate(across(2:ncol(df_t), function(x) round(x / 10^6, 0)))
+    ungroup() |> 
+    mutate(across(where(is.double), ~ round(.x / 10^6, 0)))
   
   return(df_t)
 }
