@@ -10,7 +10,7 @@ YEAR <- c(2022, 2023)
 PERIOD <- "MONTH"
 
 
-# Function to construct api path
+# Function to construct API path
 api_construct <- function(budgetCode, 
                           budgetItem, # "INCOMES","EXPENSES","FINANCING_DEBTS","FINANCING_CREDITOR","CREDITS"),
                           classificationType, # "PROGRAM","FUNCTIONAL","ECONOMIC","CREDIT"
@@ -42,7 +42,7 @@ api_construct <- function(budgetCode,
 }
 
 
-# Function to call api, read in and parse data
+# Function to call API, read in and parse data
 call_api <- function(api_path, col_types) {
   data_call <- GET(api_path) |> 
     pluck("content") |> 
@@ -67,7 +67,7 @@ call_api <- function(api_path, col_types) {
 # Read in API codes
 codes <- read_excel("./data/Open Budget variable types.xlsx")
 
-# Construct api calls
+# Construct API calls
 df_api <- codes |> 
   group_by(budgetItem, classificationType) |> 
   summarise(col_type = paste(colType, collapse = "")) |> 
@@ -85,7 +85,7 @@ df_n <- df_api |>
   summarise(data = list(map_dfr(data, rbind)))
 
 
-# Extract nested data column 
+# Extract nested data column as a list
 data_l <- df_n$data
 names(data_l) <- if_else(!is.na(df_n$classificationType),
                          paste(df_n$budgetItem, df_n$classificationType, sep=", "),
@@ -114,8 +114,10 @@ reshape_table <- function(df, last_date) {
                   names_from = "REP_PERIOD", 
                   values_from = "ZAT_AMT"),
       by = c("TYPE" = "TYPE")) |> 
-    ungroup() |> 
-    as_tibble()
+    ungroup()
+  
+  df_t <- df_t |> 
+    mutate(across(2:ncol(df_t), function(x) round(x / 10^6, 0)))
   
   return(df_t)
 }
@@ -148,7 +150,12 @@ fin <- data_l$FINANCING_DEBTS |>
   mutate(CAT = "Financing", .before=1)
 
 # Write data to Excel file
-data_l <- append(list(SUMMARY = rbind(inc, exp, fin)), data_l)
+if('SUMMARY' %in% names(data_l)) {
+  data_l$SUMMARY <- rbind(inc, exp, fin)
+} else {
+  data_l <- append(list(SUMMARY = rbind(inc, exp, fin)), data_l)
+}
+
 write_xlsx(data_l, "./data/output.xlsx")
  
 
