@@ -1,6 +1,7 @@
 library(httr)
 library(jsonlite)
 library(tidyverse)
+library(dplyr)
 library(readxl)
 library(writexl)
 
@@ -116,7 +117,7 @@ reshape_table <- function(df, date) {
       by = c("TYPE" = "TYPE")) |> 
     ungroup() |> 
     mutate(across(where(is.double), ~ round(.x / 10^6, 0))) # convert units to millions UAH
-  
+    
   return(df_t)
 }
 
@@ -140,7 +141,8 @@ exp <- data_l$`EXPENSES, ECONOMIC` |>
                     labels = c("Opex","Capex","Opex","Interest","Opex","Capex","Opex"))
          ) |> 
   reshape_table(last_date) |> 
-  mutate(CAT = "Expense", .before=1)
+  mutate(CAT = "Expense", .before=1)|>
+  mutate(across(where(is.numeric),~.x*-1)) #change the sign of the inputs
 
 fin <- data_l$FINANCING_DEBTS |> 
   mutate(TYPE = case_when(COD_FINA == 401000 ~ "New Borrowing",
@@ -151,15 +153,46 @@ fin <- data_l$FINANCING_DEBTS |>
   reshape_table(last_date) |> 
   mutate(CAT = "Financing", .before=1)
 
+credit <- data_l$`CREDITS, CREDIT` |>
+  mutate(TYPE = "Budget loans balance") |>
+  reshape_table(last_date) |> 
+  mutate(CAT = "Loans", .before=1)|>
+  mutate(across(where(is.numeric),~.x*-1)) #change the sign of the inputs
+
+#Arrange the table according to the template
+
+for_template <- function (df,
+                          category,
+                          codes) {
+  
+  category_df <- df|>
+    filter(TYPE %in% c(codes))|>
+    summarise_if(is.numeric,sum)|>
+    mutate(CAT="Total",TYPE=category,.before = 1)
+  
+  df_temp<-rbind.data.frame(df,category_df)
+  
+  return(df_temp)
+}
+
+template <- rbind(inc, exp, fin, credit)|>
+  for_template(category="Current revenues",codes=c("Tax","Non-tax","Transfers"))|>
+  for_template("Operating surplus", codes=c("Current revenues","Opex"))|>
+  for_template("Current_surplus", codes=c("Operating surplus","Interest"))|>
+  for_template("Capital surplus",codes=c("Capital revenues","Capex"))|>
+  for_template("Net surplus before financing",codes=c("Capital surplus","Current surplus","Budget loans balance"))|>
+  for_template("Net debt",codes=c("New Borrowing","Debt Repayments","Interbudget loans"))|>
+  for_template("Net surplus",codes = c("Net surplus before financing","Net debt"))|>
+  slice(1,2,4,13,5,14,7,15,3,6,16,12,17,11,8,9,18,19)
+
 # Write data to Excel file
 if('SUMMARY' %in% names(data_l)) {
-  data_l$SUMMARY <- rbind(inc, exp, fin)
+  data_l$SUMMARY <- template
 } else {
-  data_l <- append(list(SUMMARY = rbind(inc, exp, fin)), data_l)
+  data_l <- append(list(SUMMARY = template), data_l)
 }
 
 write_xlsx(data_l, "./data/output.xlsx")
- 
 
 
 
