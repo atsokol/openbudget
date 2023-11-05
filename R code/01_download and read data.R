@@ -87,28 +87,26 @@ reshape_table <- function(df, last_date, group_var) {
   df_agg <- df |> 
     filter(month(REP_PERIOD) %in% c(month(last_date),12),
            FUND_TYP == "T")|>
-    group_by({{group_var}}, REP_PERIOD)%>% 
+    group_by({{group_var}}, REP_PERIOD) |>  
     summarise(FAKT_AMT = sum(FAKT_AMT),
-              ZAT_AMT = sum(ZAT_AMT))
+              ZAT_AMT = sum(ZAT_AMT), .groups = "drop")
   
-  df_t <- df_agg |> 
+  budget <- df_agg |>  
+    select(-FAKT_AMT) |>
+    filter(REP_PERIOD == last_date) |> 
+    mutate(REP_PERIOD = paste0(year(last_date), "_B")) |>  # period label for budget amounts
+    pivot_wider(names_from = "REP_PERIOD", values_from = "ZAT_AMT")
+  
+  df_table <- df_agg |> 
     select(-ZAT_AMT) |> 
     mutate(REP_PERIOD = ifelse(month(REP_PERIOD) == 12, 
                                year(REP_PERIOD), 
                                paste0(month(REP_PERIOD), "m ", year(REP_PERIOD)))) |> # period labels for actual amounts
     pivot_wider(names_from = "REP_PERIOD", values_from = "FAKT_AMT") |> 
-    left_join(
-      pivot_wider(df_agg |> 
-                    select(-FAKT_AMT) |> 
-                    filter(REP_PERIOD == last_date) |> 
-                    mutate(REP_PERIOD = paste0(year(last_date), "_B")), # period label for budget amounts
-                  names_from = "REP_PERIOD", 
-                  values_from = "ZAT_AMT"),
-      by = join_by({{group_var}} == {{group_var}})) |> 
-    ungroup() |> 
+    left_join(budget, by = join_by({{group_var}} == {{group_var}})) |> 
     mutate(across(where(is.double), ~ round(.x / 10^6, 0))) # convert units to millions UAH
     
-  return(df_t)
+  return(df_table)
 }
 
 # Reporting date
