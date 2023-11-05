@@ -47,21 +47,12 @@ api_construct <- function(budgetCode,
 call_api <- function(api_path, col_types) {
   data_call <- GET(api_path) |> 
     pluck("content") |> 
-    rawToChar()
-  
-  if (missing(col_types)) {
-      data_read <- data_call |> 
-        read_delim(delim = ";") |> 
-        mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
-               ceiling_date(unit="month") - days(1)) 
-  } else {
-      data_read <- data_call |> 
-        read_delim(delim = ";", col_types = col_types) |> 
-        mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
+    rawToChar() |> 
+    read_delim(delim = ";", col_types = col_types) |> 
+    mutate(REP_PERIOD = readr::parse_date(REP_PERIOD, "%m.%Y") |> 
              ceiling_date(unit="month") - days(1)) 
-  }
   
-  return(data_read)
+  return(data_call)
 }
 
 
@@ -71,9 +62,8 @@ codes <- read_excel("./data/Open Budget variable types.xlsx")
 # Construct API calls
 df_api <- codes |> 
   group_by(budgetItem, classificationType) |> 
-  summarise(col_type = paste(colType, collapse = "")) |> 
-  mutate(budgetItem = str_trim(budgetItem),
-         classificationType = str_trim(classificationType)) |> # trim white space in category names
+  summarise(col_type = paste(colType, collapse = ""), .groups = "drop") |> 
+  mutate(across(everything(), str_trim)) |>  # trim white space in category names
   expand_grid(budgetCode = BUDGETCODE, period = PERIOD, year = YEAR) |> 
   rowwise() |> 
   mutate(api_path = api_construct(budgetCode, budgetItem, classificationType, period, year)) 
@@ -93,11 +83,11 @@ names(data_l) <- if_else(!is.na(df_n$classificationType),
                          df_n$budgetItem)
 
 # Function to aggregate and reshape data in the SUMMARY table
-reshape_table <- function(df, date) {
+reshape_table <- function(df, last_date, group_var) {
   df_agg <- df |> 
-    filter(month(REP_PERIOD) %in% c(month(date),12),
+    filter(month(REP_PERIOD) %in% c(month(last_date),12),
            FUND_TYP == "T")|>
-    group_by(TYPE, REP_PERIOD)%>% 
+    group_by({{group_var}}, REP_PERIOD)%>% 
     summarise(FAKT_AMT = sum(FAKT_AMT),
               ZAT_AMT = sum(ZAT_AMT))
   
@@ -110,11 +100,11 @@ reshape_table <- function(df, date) {
     left_join(
       pivot_wider(df_agg |> 
                     select(-FAKT_AMT) |> 
-                    filter(REP_PERIOD == date) |> 
-                    mutate(REP_PERIOD = paste0(year(date), "_B")), # period label for budget amounts
+                    filter(REP_PERIOD == last_date) |> 
+                    mutate(REP_PERIOD = paste0(year(last_date), "_B")), # period label for budget amounts
                   names_from = "REP_PERIOD", 
                   values_from = "ZAT_AMT"),
-      by = c("TYPE" = "TYPE")) |> 
+      by = join_by({{group_var}} == {{group_var}})) |> 
     ungroup() |> 
     mutate(across(where(is.double), ~ round(.x / 10^6, 0))) # convert units to millions UAH
     
@@ -131,7 +121,7 @@ inc <- data_l$INCOMES |>
                     breaks = c(0,19999999,29999999,39999999,60000000),
                     labels = c("Tax","Non-tax","Capital revenues","Transfers"))
          ) |> 
-  reshape_table(last_date) |> 
+  reshape_table(last_date, TYPE) |> 
   mutate(CAT = "Income", .before=1)
 
 
@@ -140,7 +130,7 @@ exp <- data_l$`EXPENSES, ECONOMIC` |>
                     breaks = c(0,2280,2281,2399,2421,2999,8999,9001),
                     labels = c("Opex","Capex","Opex","Interest","Opex","Capex","Opex"))
          ) |> 
-  reshape_table(last_date) |> 
+  reshape_table(last_date, TYPE) |> 
   mutate(CAT = "Expense", .before=1)|>
   mutate(across(where(is.numeric),~.x*-1)) #change the sign of the inputs
 
@@ -150,12 +140,12 @@ fin <- data_l$FINANCING_DEBTS |>
                           COD_FINA == 602300 ~ "Interbudget loans",
                           TRUE ~ "NA")
          ) |> 
-  reshape_table(last_date) |> 
+  reshape_table(last_date, TYPE) |> 
   mutate(CAT = "Financing", .before=1)
 
 credit <- data_l$`CREDITS, CREDIT` |>
   mutate(TYPE = "Budget loans balance") |>
-  reshape_table(last_date) |> 
+  reshape_table(last_date, TYPE) |> 
   mutate(CAT = "Loans", .before=1)|>
   mutate(across(where(is.numeric),~.x*-1)) #change the sign of the inputs
 
