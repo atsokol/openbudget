@@ -9,8 +9,8 @@ city_codes <- read_excel(here("data/Open Budget city budget codes.xlsx"))
 current_year <- year(Sys.Date())
 
 # Source required functions from other files
-source(here("R code/shiny_app/download.R"))
-source(here("R code/shiny_app/summarise.R"))
+source(here("shiny_app/download.R"))
+source(here("shiny_app/summarise.R"))
 
 shinyApp(
   ui = fluidPage(
@@ -81,7 +81,7 @@ shinyApp(
 
     output$table <- renderDataTable(datatable(
       display_table(), 
-      options = list(pageLength = 20, autoWidth = TRUE)
+      options = list(pageLength = 25, autoWidth = TRUE)
       ) |> 
         formatRound(3:ncol(display_table()), interval = 3, digits = 0))
     
