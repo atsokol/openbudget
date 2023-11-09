@@ -3,10 +3,12 @@
 city_chooser <- function(City) {
   city_codes <- read_excel(here("data/Open Budget city budget codes.xlsx"))
   
-  insert_bc <- city_codes |>
-    filter(city == City)
-  return_bc <- c(insert_bc$budget_code_1, insert_bc$budget_code_2)
-  return(return_bc)
+  vec <- city_codes |>
+    filter(city == City) |> 
+    select(-1) |> 
+    unlist(use.names = FALSE)
+
+  return(vec)
 }
 
 
@@ -52,8 +54,8 @@ call_api <- function(api_path, col_types) {
   return(data_call)
 }
 
+# Function to download data
 download_data <- function(BUDGETCODE, YEAR) {
-  
   var_types <- read_excel(here("data/Open Budget variable types v2.xlsx"))
   
   # Construct API calls

@@ -5,7 +5,7 @@ reshape_table <- function(df, date, group_var) {
   # Latest date for which data is available
   last_date <- max(df$REP_PERIOD)
   
-  # Latest available budget numbers
+  # Latest available budget (plan) figures
   budget <- df |>
     filter(REP_PERIOD == last_date,
            FUND_TYP == "T") |>
@@ -14,7 +14,7 @@ reshape_table <- function(df, date, group_var) {
     mutate(REP_PERIOD = paste0(year(REP_PERIOD), "_B")) |>  # period label for budget amounts
     pivot_wider(names_from = "REP_PERIOD", values_from = "ZAT_AMT")
   
-  # Actual numbers
+  # Actual figures
   df_table <- df |> 
     filter(month(REP_PERIOD) %in% c(month(date), 12),
            FUND_TYP == "T")|>
@@ -24,13 +24,13 @@ reshape_table <- function(df, date, group_var) {
                                year(REP_PERIOD), 
                                paste0(month(REP_PERIOD), "m ", year(REP_PERIOD)))) |> # period labels for actual amounts
     pivot_wider(names_from = "REP_PERIOD", values_from = "FAKT_AMT") |> 
-    left_join(budget, by = join_by({{group_var}} == {{group_var}})) |> 
+    full_join(budget, by = join_by({{group_var}} == {{group_var}})) |> 
     mutate(across(where(is.double), ~ round(.x / 10^6, 0))) # convert units to millions UAH
   
   return(df_table)
 }
 
-summarise_data <- function(data_l, period) {
+summarise_data <- function(data_l, period, adj_cat = NULL) {
   # Latest date for which data is available
   last_date <- max(data_l$INCOMES$REP_PERIOD)
   
@@ -141,9 +141,9 @@ summarise_data <- function(data_l, period) {
   transfers_names <- unique(transfers$NAME_INC) |>
     cbind(unique(transfers$COD_INCO)) 
   
-  #Aggregate final income data for the model - MANUAL INPUTS!
+  #Aggregate final income data for the model including adjustment for capital grants
   inc_m <- inc_m |>
-    mutate(TYPE = replace(TYPE, COD_INCO == 41031700, "Capital grants")) |> #the budget code was from the transfers table
+    mutate(TYPE = replace(TYPE, COD_INCO %in% adj_cat, "Capital grants")) |> #the budget code was from the transfers table
     reshape_table(date, TYPE) |> 
     mutate(CAT = "Income", .before=1)
   

@@ -42,9 +42,11 @@ shinyApp(
                      choices = list("Latest" = 1, "3 months" = 2, "6 months" = 3, "9 months" = 4, "FY" = 5),
                      selected = 1),
         radioButtons("button", label = "Display table",
-                     choices = list("Financial summary" = 1, "Financial model" = 2), 
+                     choices = list("Financial summary" = 1, "Financial model" = 2, "Transfers" = 3), 
                      selected = 1),
-        hr(),
+        selectInput("grants", "Capital grants adjustment",
+                    choices = c(),
+                    multiple = TRUE),
         downloadButton("downloadData", "Download file"),
         conditionalPanel(condition="$('html').hasClass('shiny-busy')",
                          tags$div("Loading...",id="loadmessage"))
@@ -67,23 +69,43 @@ shinyApp(
       download_data(BUDGETCODE(), YEAR())
       })
     
+    observe({
+      cap_grants <- data()[["INCOMES"]] |> 
+        filter(COD_INCO >= 40000000, 
+               COD_INCO <= 49999999) |> 
+        select(COD_INCO) |> 
+        distinct() |> 
+        arrange(COD_INCO)
+        
+        updateSelectInput(
+          inputId = "grants", 
+          choices = cap_grants
+        )
+    })
+    
     table <- reactive({
-      summarise_data(data(), input$frac_period)
+      summarise_data(data(), input$frac_period, input$grants)
       })
     
     display_table <- reactive({
       if (input$button == 1) {
         table()[['SUMMARY_UPDATE']]
-      } else {
+      } else if (input$button == 2) {
         table()[['SUMMARY_MODEL']]
+      } else if (input$button == 3) {
+        data()[["INCOMES"]] |> 
+          filter(COD_INCO >= 40000000, 
+                 COD_INCO <= 49999999) |> 
+          select(COD_INCO, NAME_INC) |> 
+          distinct() |> 
+          arrange(COD_INCO)
       }
     })
 
     output$table <- renderDataTable(datatable(
       display_table(), 
       options = list(pageLength = 25, autoWidth = TRUE)
-      ) |> 
-        formatRound(3:ncol(display_table()), interval = 3, digits = 0))
+      ))
     
     output$downloadData <- downloadHandler(
       filename = function() {
