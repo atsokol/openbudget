@@ -81,10 +81,10 @@ shinyApp(
     
     observeEvent(input$table_rows_selected, {
       if (input$button == 3) {
-        s <- input$table_rows_selected
+        rows <- input$table_rows_selected
         updateSelectInput(inputId = "grants",
                           choices = cap_grants()[["COD_INCO"]],
-                          selected = cap_grants()[["COD_INCO"]][s])
+                          selected = cap_grants()[["COD_INCO"]][rows])
       }
     })
     
@@ -104,7 +104,12 @@ shinyApp(
     
     output$table <- renderDataTable(datatable(
       display_table(), 
-      options = list(pageLength = 25, autoWidth = TRUE)
+      options = list(pageLength = 30, autoWidth = TRUE),
+      selection = list(target = "row", mode = "multiple", 
+                       selected = if (input$button == 3) {
+                         which(cap_grants()[["COD_INCO"]] %in% input$grants)
+                         }
+                       )
       ))
 
     output$downloadData <- downloadHandler(
