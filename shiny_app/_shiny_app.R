@@ -51,6 +51,7 @@ shinyApp(
         conditionalPanel(condition="$('html').hasClass('shiny-busy')",
                          tags$div("Loading...",id="loadmessage"))
       ),
+      
       mainPanel( 
         DT::dataTableOutput("table")
       )
@@ -69,18 +70,22 @@ shinyApp(
       download_data(BUDGETCODE(), YEAR())
       })
     
-    observe({
-      cap_grants <- data()[["INCOMES"]] |> 
+    cap_grants <- reactive({
+      data()[["INCOMES"]] |> 
         filter(COD_INCO >= 40000000, 
-               COD_INCO <= 49999999) |> 
-        select(COD_INCO) |> 
+               COD_INCO <= 60000000) |> 
+        select(COD_INCO, NAME_INC) |> 
         distinct() |> 
         arrange(COD_INCO)
-        
-        updateSelectInput(
-          inputId = "grants", 
-          choices = cap_grants
-        )
+    })
+    
+    observeEvent(input$table_rows_selected, {
+      if (input$button == 3) {
+        s <- input$table_rows_selected
+        updateSelectInput(inputId = "grants",
+                          choices = cap_grants()[["COD_INCO"]],
+                          selected = cap_grants()[["COD_INCO"]][s])
+      }
     })
     
     table <- reactive({
@@ -93,20 +98,15 @@ shinyApp(
       } else if (input$button == 2) {
         table()[['SUMMARY_MODEL']]
       } else if (input$button == 3) {
-        data()[["INCOMES"]] |> 
-          filter(COD_INCO >= 40000000, 
-                 COD_INCO <= 49999999) |> 
-          select(COD_INCO, NAME_INC) |> 
-          distinct() |> 
-          arrange(COD_INCO)
+        cap_grants()
       }
     })
-
+    
     output$table <- renderDataTable(datatable(
       display_table(), 
       options = list(pageLength = 25, autoWidth = TRUE)
       ))
-    
+
     output$downloadData <- downloadHandler(
       filename = function() {
         paste(input$city," ", input$year_from, "-", input$year_to, ".xlsx", sep = "")
