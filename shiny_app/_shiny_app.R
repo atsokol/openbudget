@@ -102,15 +102,16 @@ shinyApp(
       }
     })
     
-    output$table <- renderDataTable(datatable(
-      display_table(), 
-      options = list(pageLength = 30, autoWidth = TRUE),
-      selection = list(target = "row", mode = "multiple", 
-                       selected = if (input$button == 3) {
-                         which(cap_grants()[["COD_INCO"]] %in% input$grants)
-                         }
-                       )
-      ))
+    output$table <- renderDataTable(
+      datatable(
+        display_table(), 
+        options = list(pageLength = 30, autoWidth = TRUE),
+        selection = list(target = "row", mode = "multiple", 
+                         selected = if (input$button == 3) {
+                           which(cap_grants()[["COD_INCO"]] %in% input$grants)
+                           })
+        ) 
+      )
 
     output$downloadData <- downloadHandler(
       filename = function() {
@@ -119,8 +120,8 @@ shinyApp(
       content = function(file) {
         write_xlsx(table(), file)
       }
-    )
+    ) 
     
   }
 )
-
+  

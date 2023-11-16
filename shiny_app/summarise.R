@@ -25,7 +25,7 @@ reshape_table <- function(df, date, group_var) {
                                paste0(month(REP_PERIOD), "m ", year(REP_PERIOD)))) |> # period labels for actual amounts
     pivot_wider(names_from = "REP_PERIOD", values_from = "FAKT_AMT") |> 
     full_join(budget, by = join_by({{group_var}} == {{group_var}})) |> 
-    mutate(across(where(is.double), ~ round(.x / 10^6, 0))) # convert units to millions UAH
+    mutate(across(where(is.double), ~ round(.x / 10^6, 2))) # convert units to millions UAH
   
   return(df_table)
 }
@@ -77,7 +77,7 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     mutate(CAT = "Loans", .before=1)|>
     mutate(across(where(is.numeric), ~.x*-1)) #change the sign of the inputs
   
-  cash <-data_l$FINANCING_DEBTS |>
+  cash <- data_l$FINANCING_DEBTS |>
     mutate(TYPE = case_when(COD_FINA == 602100  ~ "Cash, bop",
                           COD_FINA == 602200 ~ "Cash, eop",
                           TRUE ~ "NA")
@@ -91,9 +91,10 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     category_df <- df|>
       filter(TYPE %in% c(codes))|>
       summarise_if(is.numeric, sum)|>
+      mutate(across(where(is.double), ~ round(.x, 2))) |> 
       mutate(CAT = "Total", TYPE = category, .before = 1)
     
-    df_temp<-rbind.data.frame(df, category_df)
+    df_temp <- rbind.data.frame(df, category_df)
     
     return(df_temp)
   }
@@ -112,11 +113,11 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
                                     "Net surplus before financing","New Borrowing","Debt Repayments",
                                     "Net debt","Budget loans balance","Net surplus","Interbudget loans", 
                                     "Cash, bop","Cash, eop"))) |> 
-    filter(TYPE != "NA", !is.na(TYPE))
+    filter(TYPE != "NA")
   
   # Write final output
-  output <- list()
-  output$SUMMARY_UPDATE <- template
+  output <- data_l
+  output <- append(output, list(SUMMARY_UPDATE = template), after=0)
   
   #Aggregate income data for the model
   inc_exp_categ <- read_excel(here("data/Open Budget category for model.xlsx"))
@@ -161,7 +162,7 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     filter(!TYPE=="NA")
   
   #Add separate tab to output excel
-  output$SUMMARY_MODEL <- model_template
+  output <- append(output, list(SUMMARY_MODEL = model_template), after=0)
   
   return(output)
   
