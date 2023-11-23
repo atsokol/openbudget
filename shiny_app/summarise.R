@@ -95,9 +95,11 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     mutate(across(where(is.numeric), ~.x*-1)) #change the sign of the inputs
   
   cash <- data_l$FINANCING_DEBTS |>
+    mutate(across(where(is.numeric),~ abs(.x)))|>
     mutate(TYPE = case_when(COD_FINA == 602100  ~ "Cash, bop",
-                          COD_FINA == 602200 ~ "Cash, eop",
-                          TRUE ~ "NA")
+                            COD_FINA == 602200 ~ "Cash, eop",
+                            COD_FINA == 601000 ~ "Cash, eop",
+                            TRUE ~ "NA")
     )|>
     reshape_table(date, TYPE)|>
     mutate(CAT = "Cash balance", .before=1)
