@@ -43,20 +43,37 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     period == 5 ~ ymd(paste(year(last_date), 12, 31))
   )
     
-  # Aggregate data by category
+  inc_exp_categ_upd<-read_excel(here("data/Open Budget category for update.xlsx"))
+  inc_categ_upd<-inc_exp_categ_upd|>
+    filter(CATEG=="INC")
+  exp_categ_upd<-inc_exp_categ_upd|>
+    filter(CATEG=="EXP")
+  
   inc <- data_l$INCOMES |>
     mutate(TYPE = cut(COD_INCO, 
-                      breaks = c(0,19999999,29999999,39999999,60000000),
-                      labels = c("Tax","Non-tax","Capital revenues","Transfers"))
-    ) |> 
+                      breaks = c(0,inc_categ_upd$BREAK_END),
+                      labels = c(inc_categ_upd$NAME_TYPE))
+    )
+  
+  #Check the transfers and re-categorize capital grants
+  transfers <- inc |>
+    filter(TYPE == "Transfers",
+           FUND_TYP == "T")
+  
+  transfers_names <- unique(transfers$NAME_INC) |>
+    cbind(unique(transfers$COD_INCO)) 
+  
+  #Aggregate final income data for the update including adjustment for capital grants
+  inc <- inc |>
+    mutate(TYPE = replace(TYPE, COD_INCO %in% adj_cat, "Capital revenues")) |> #the budget code was from the transfers table
     reshape_table(date, TYPE) |> 
     mutate(CAT = "Income", .before=1)
   
-  
   exp <- data_l$`EXPENSES, ECONOMIC` |> 
     mutate(TYPE = cut(COD_CONS_EK, 
-                      breaks = c(0,2280,2281,2399,2421,2999,8999,9001),
-                      labels = c("Opex","Capex","Opex","Interest","Opex","Capex","Opex"))
+                      breaks = c(0,exp_categ_upd$BREAK_END),
+                      labels = c(exp_categ_upd$NAME_TYPE)
+    )
     ) |> 
     reshape_table(date, TYPE) |> 
     mutate(CAT = "Expense", .before=1)|>
@@ -134,13 +151,6 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
                       labels = c(inc_categ$NAME_TYPE))
     )
   
-  #Check the transfers and re-categorize capital grants
-  transfers <- inc_m |>
-    filter(TYPE == "Transfers",
-           FUND_TYP == "T")
-  
-  transfers_names <- unique(transfers$NAME_INC) |>
-    cbind(unique(transfers$COD_INCO)) 
   
   #Aggregate final income data for the model including adjustment for capital grants
   inc_m <- inc_m |>
