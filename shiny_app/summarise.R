@@ -110,7 +110,7 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     category_df <- df|>
       filter(TYPE %in% c(codes))|>
       summarise_if(is.numeric, sum)|>
-      mutate(across(where(is.double), ~ round(.x, 2))) |> 
+      mutate(across(where(is.double), ~ round(.x, 6))) |> 
       mutate(CAT = "Total", TYPE = category, .before = 1)
     
     df_temp <- rbind.data.frame(df, category_df)
@@ -134,9 +134,11 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
                                     "Cash, bop","Cash, eop"))) |> 
     filter(TYPE != "NA")
   
+
   # Write final output
   output <- data_l
   output <- append(output, list(SUMMARY_UPDATE = template), after=0)
+
   
   #Aggregate income data for the model
   inc_exp_categ <- read_excel(here("data/Open Budget category for model.xlsx"))
@@ -160,6 +162,9 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
     reshape_table(date, TYPE) |> 
     mutate(CAT = "Income", .before=1)
   
+  cap_grants <- inc_m|>
+    filter(TYPE=="Capital grants")
+  
   #Aggregate expense data for the model
   exp_m <- data_l$`EXPENSES, ECONOMIC` |> 
     mutate(TYPE = cut(COD_CONS_EK, 
@@ -172,10 +177,13 @@ summarise_data <- function(data_l, period, adj_cat = NULL) {
   
   model_template <- rbind(inc_m, exp_m, fin, credit, cash) |>
     filter(!TYPE=="NA")
+
   
   #Add separate tab to output excel
   output <- append(output, list(SUMMARY_MODEL = model_template), after=0)
+
   
   return(output)
+  
   
 }
